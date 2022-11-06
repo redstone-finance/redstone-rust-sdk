@@ -1,17 +1,11 @@
-pub fn get_oracle_value(// _redstone_payload: &[u8],
-    // _data_feed_id: &[u8; 32],
-    // _authorised_signers: &[u8; 32] -> u8
-) -> u128 {
-    // redstone_payload;
-    // data_feed_id;
+use std::str;
+
+pub fn get_oracle_value(redstone_payload: &[u8], data_feed_id: &[u8; 32]) -> u128 {
+    println!("Redstone payload byte size: {0}", redstone_payload.len());
+    let data_feed_id_to_print: &[u8] = &data_feed_id.to_vec();
+    println!(
+        "Requested data feed: {0}",
+        str::from_utf8(data_feed_id_to_print).unwrap()
+    );
     42
 }
-
-// #[cfg(test)]
-// mod tests {
-//     #[test]
-//     fn it_works() {
-//         let result: u128 = get_oracle_value();
-//         assert_eq!(result, 42);
-//     }
-// }
