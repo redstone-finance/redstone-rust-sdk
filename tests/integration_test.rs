@@ -36,6 +36,8 @@ fn it_gets_oracle_value() {
   let redstone_payload_vec = decode_hex(REDSTONE_PAYLOAD_HEX_STR).unwrap();
   let data_feed_id_vec = decode_hex(BTC_BYTES_32_HEX_STR).unwrap();
   let data_feed_id: [u8; 32] = data_feed_id_vec.try_into().unwrap();
-  let oracle_value = redstone_rust_sdk::get_oracle_value(&redstone_payload_vec, &data_feed_id);
+  let authorised_signers: Vec<[u8; 33]> = vec![];
+  let oracle_value =
+    redstone_rust_sdk::get_oracle_value(&data_feed_id, &authorised_signers, &redstone_payload_vec);
   assert_eq!(42, oracle_value);
 }

@@ -15,7 +15,11 @@ struct DataPackageExtractionResult {
     data_package_byte_size: usize,
 }
 
-pub fn get_oracle_value(redstone_payload: &[u8], data_feed_id: &[u8; 32]) -> u128 {
+pub fn get_oracle_value(
+    data_feed_id: &[u8; 32],
+    authorised_signers: &[[u8; 33]],
+    redstone_payload: &[u8],
+) -> u128 {
     do_helpful_logging(redstone_payload, data_feed_id);
     assert_valid_redstone_marker(redstone_payload);
     let mut negative_offset = extract_unsigned_metadata_offset(redstone_payload);
