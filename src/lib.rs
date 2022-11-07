@@ -1,8 +1,6 @@
 use bitmaps::Bitmap;
 use ink_env::hash::{HashOutput, Keccak256};
 use std::convert::TryInto;
-use std::str;
-use std::{fmt::Write, num::ParseIntError};
 
 const REDSTONE_MARKER_BS: usize = 9;
 const UNSIGNED_METADATA_BYTE_SIZE_BS: usize = 3;
@@ -13,6 +11,7 @@ const MAX_SIGNERS_COUNT: usize = 256;
 const DATA_POINT_VALUE_BYTE_SIZE_BS: usize = 4;
 const DATA_FEED_ID_BS: usize = 32;
 const TIMESTAMP_BS: usize = 6;
+const MAX_TIMESTAMP_DELAY_MS: u128 = 3 * 60 * 1000; // 3 minutes in milliseconds
 const REDSTONE_MARKER: [u8; 9] = [0, 0, 2, 237, 87, 1, 30, 0, 0]; // 0x000002ed57011e0000
 
 struct DataPackageExtractionResult {
@@ -26,6 +25,7 @@ pub fn get_oracle_value(
     data_feed_id: &[u8; 32],
     unique_signers_threshold: u8,
     authorised_signers: &[[u8; 33]],
+    current_timestamp_milliseconds: u128,
     redstone_payload: &[u8],
 ) -> u128 {
     assert_valid_redstone_marker(redstone_payload);
@@ -47,6 +47,7 @@ pub fn get_oracle_value(
             redstone_payload,
             negative_offset,
             authorised_signers,
+            current_timestamp_milliseconds,
         );
 
         // Shifting negative offset to the next package
@@ -97,6 +98,7 @@ fn extract_data_package(
     redstone_payload: &[u8],
     negative_offset_to_package: usize,
     authorised_signers: &[[u8; 33]],
+    current_timestamp_milliseconds: u128,
 ) -> DataPackageExtractionResult {
     let mut value_for_requested_data_feed: u128 = 0;
     let mut contains_requested_data_feed = false;
@@ -129,8 +131,8 @@ fn extract_data_package(
     // Extracting and validating timestamp
     start_index -= TIMESTAMP_BS;
     end_index = start_index + TIMESTAMP_BS;
-    let timestamp = bytes_arr_to_number(&redstone_payload[start_index..end_index]);
-    validate_timestamp(timestamp);
+    let timestamp_milliseconds = bytes_arr_to_number(&redstone_payload[start_index..end_index]);
+    validate_timestamp(timestamp_milliseconds, current_timestamp_milliseconds);
 
     // Going through data points
     for _data_point_index in 0..data_points_count {
@@ -203,14 +205,12 @@ fn aggregate_values(values: &mut Vec<u128>) -> u128 {
     }
 }
 
-// TODO: make it configurable
-fn validate_timestamp(received_timestamp: u128) {
-    if received_timestamp == 0 {
-        panic!("Timestamp is invalid");
+fn validate_timestamp(received_timestamp_milliseconds: u128, current_timestamp_milliseconds: u128) {
+    if received_timestamp_milliseconds + MAX_TIMESTAMP_DELAY_MS < current_timestamp_milliseconds {
+        panic!("Timestamp is too old");
     }
 }
 
-// TODO: implement
 fn extract_usize_num_from_redstone_payload(
     redstone_payload: &[u8],
     start: usize,
@@ -234,19 +234,4 @@ fn bytes_arr_to_number(number_bytes: &[u8]) -> u128 {
     }
 
     result_number
-}
-
-pub fn encode_hex(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        write!(&mut s, "{:02x}", b).unwrap();
-    }
-    s
-}
-
-pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
-        .collect()
 }
