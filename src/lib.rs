@@ -1,6 +1,8 @@
 use bitmaps::Bitmap;
-use std::fmt::Write;
+use ink_env::hash::{HashOutput, Keccak256};
+use std::convert::TryInto;
 use std::str;
+use std::{fmt::Write, num::ParseIntError};
 
 const REDSTONE_MARKER_BS: usize = 9;
 const UNSIGNED_METADATA_BYTE_SIZE_BS: usize = 3;
@@ -26,7 +28,6 @@ pub fn get_oracle_value(
     authorised_signers: &[[u8; 33]],
     redstone_payload: &[u8],
 ) -> u128 {
-    do_helpful_logging(redstone_payload, data_feed_id);
     assert_valid_redstone_marker(redstone_payload);
     let mut negative_offset = extract_unsigned_metadata_offset(redstone_payload);
     let number_of_data_packages =
@@ -68,7 +69,6 @@ pub fn get_oracle_value(
 fn assert_valid_redstone_marker(redstone_payload: &[u8]) {
     let marker_start_index = redstone_payload.len() - REDSTONE_MARKER_BS;
     let redstone_marker = &redstone_payload[marker_start_index..];
-    println!("Marker: {0}", encode_hex(redstone_marker));
     if REDSTONE_MARKER != redstone_marker {
         panic!("Invalid redstone marker");
     }
@@ -120,11 +120,11 @@ fn extract_data_package(
         extract_usize_num_from_redstone_payload(redstone_payload, start_index, end_index);
 
     // Calculating total data package byte size
-    let data_package_byte_size = (data_points_value_bs + DATA_FEED_ID_BS) * data_points_count
+    let data_package_byte_size_without_sig = (data_points_value_bs + DATA_FEED_ID_BS)
+        * data_points_count
         + TIMESTAMP_BS
         + DATA_POINT_VALUE_BYTE_SIZE_BS
-        + DATA_POINTS_COUNT_BS
-        + SIGNATURE_BS;
+        + DATA_POINTS_COUNT_BS;
 
     // Extracting and validating timestamp
     start_index -= TIMESTAMP_BS;
@@ -151,18 +151,41 @@ fn extract_data_package(
         }
     }
 
-    // Message construction, hashing and signer recovering
-    // TODO: implement
-    if signer_index == 0 {
-        signer_index = 1;
+    // Message construction
+    end_index = redstone_payload.len() - (negative_offset_to_package + SIGNATURE_BS);
+    start_index = end_index - data_package_byte_size_without_sig;
+    let signable_message = &redstone_payload[start_index..end_index];
+
+    // Hashing message
+    let mut message_hash = <Keccak256 as HashOutput>::Type::default(); // 256-bit buffer
+    ink_env::hash_bytes::<Keccak256>(signable_message, &mut message_hash);
+
+    // Recovering signer public key
+    let mut recovered_signer = [0; 33];
+    ink_env::ecdsa_recover(
+        &(signature.try_into().unwrap()),
+        &message_hash,
+        &mut recovered_signer,
+    )
+    .unwrap();
+
+    // Signer verification
+    let mut signer_is_authorised = false;
+    for (authorised_signer_index, authorised_signer) in authorised_signers.iter().enumerate() {
+        if authorised_signer == &recovered_signer {
+            signer_index = authorised_signer_index;
+            signer_is_authorised = true;
+        }
+    }
+    if !signer_is_authorised {
+        panic!("Signer is not authorised");
     }
 
-    println!("\n\nSignature: {0}", encode_hex(signature));
-
+    // Prepare result
     DataPackageExtractionResult {
         contains_requested_data_feed,
         value_for_requested_data_feed,
-        data_package_byte_size,
+        data_package_byte_size: data_package_byte_size_without_sig + SIGNATURE_BS,
         signer_index,
     }
 }
@@ -177,16 +200,6 @@ fn validate_timestamp(received_timestamp: u128) {
     if received_timestamp == 0 {
         panic!("Timestamp is invalid");
     }
-}
-
-// TODO: remove later
-fn do_helpful_logging(redstone_payload: &[u8], data_feed_id: &[u8; 32]) {
-    println!("Redstone payload byte size: {0}", redstone_payload.len());
-    let data_feed_id_to_print: &[u8] = &data_feed_id.to_vec();
-    println!(
-        "Requested data feed: {0}",
-        str::from_utf8(data_feed_id_to_print).unwrap()
-    );
 }
 
 // TODO: implement
@@ -221,4 +234,11 @@ pub fn encode_hex(bytes: &[u8]) -> String {
         write!(&mut s, "{:02x}", b).unwrap();
     }
     s
+}
+
+pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
+        .collect()
 }
