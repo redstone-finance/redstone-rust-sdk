@@ -63,7 +63,7 @@ pub fn get_oracle_value(
         panic!("Insufficient number of unique signers");
     }
 
-    aggregate_values(&values)
+    aggregate_values(&mut values)
 }
 
 fn assert_valid_redstone_marker(redstone_payload: &[u8]) {
@@ -190,9 +190,17 @@ fn extract_data_package(
     }
 }
 
-// TODO: implement median aggregation
-fn aggregate_values(values: &Vec<u128>) -> u128 {
-    values[0]
+fn aggregate_values(values: &mut Vec<u128>) -> u128 {
+    if values.len() == 0 {
+        panic!("Can not take median of an empty array");
+    }
+    values.sort();
+    let mid = values.len() / 2;
+    if values.len() % 2 == 0 {
+        return (values[mid - 1] + values[mid]) / 2;
+    } else {
+        return values[mid];
+    }
 }
 
 // TODO: make it configurable
